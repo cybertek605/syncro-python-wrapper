@@ -8,16 +8,26 @@ import os
 import re
 import requests
 import datetime
+import time
+import functools
 from requests.structures import CaseInsensitiveDict
 from dotenv import load_dotenv
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Any
 
 # Import Pydantic models
 try:
     from .models import Ticket, Customer, Asset
+    from .exceptions import (
+        SyncroError, SyncroAuthError, SyncroPermissionError, 
+        SyncroNotFoundError, SyncroRateLimitError, SyncroServerError, SyncroValidationError
+    )
 except ImportError:
     # Handle cases where the package is not installed as a module
     from models import Ticket, Customer, Asset
+    from exceptions import (
+        SyncroError, SyncroAuthError, SyncroPermissionError, 
+        SyncroNotFoundError, SyncroRateLimitError, SyncroServerError, SyncroValidationError
+    )
 
 # Load environment variables from .env file
 load_dotenv()
@@ -28,6 +38,65 @@ bearertoken = os.getenv("SYNCRO_API_TOKEN")
 
 # Global setting for model usage
 RETURN_MODELS = os.getenv("SYNCRO_RETURN_MODELS", "False").lower() == "true"
+
+# Retry Configuration
+MAX_RETRIES = int(os.getenv("SYNCRO_MAX_RETRIES", "3"))
+RETRY_DELAY = int(os.getenv("SYNCRO_RETRY_DELAY", "2")) # Seconds
+
+def handle_api_errors(func):
+    """Decorator to handle common Syncro API errors and implement retries."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        retries = 0
+        while retries <= MAX_RETRIES:
+            try:
+                response = func(*args, **kwargs)
+                
+                # Check for successful response
+                if response.status_code in [200, 201]:
+                    return response
+                
+                # Handle specific error codes
+                if response.status_code == 401:
+                    raise SyncroAuthError("Invalid API Token or unauthorized access.")
+                elif response.status_code == 403:
+                    raise SyncroPermissionError("API Token lacks required permissions.")
+                elif response.status_code == 404:
+                    raise SyncroNotFoundError(f"Resource not found: {response.url}")
+                elif response.status_code == 422:
+                    raise SyncroValidationError(f"Validation error: {response.text}")
+                elif response.status_code == 429:
+                    retry_after = int(response.headers.get("Retry-After", RETRY_DELAY))
+                    print(f"⚠️ Rate limit hit. Retrying in {retry_after}s...")
+                    time.sleep(retry_after)
+                    retries += 1
+                    continue
+                elif response.status_code >= 500:
+                    if retries < MAX_RETRIES:
+                        print(f"⚠️ Server error ({response.status_code}). Retrying...")
+                        time.sleep(RETRY_DELAY * (retries + 1))
+                        retries += 1
+                        continue
+                    raise SyncroServerError(f"Syncro server error: {response.status_code}")
+                else:
+                    raise SyncroError(f"Unexpected API error: {response.status_code} - {response.text}")
+                    
+            except requests.exceptions.RequestException as e:
+                if retries < MAX_RETRIES:
+                    print(f"⚠️ Network error: {e}. Retrying...")
+                    time.sleep(RETRY_DELAY * (retries + 1))
+                    retries += 1
+                    continue
+                raise SyncroError(f"Network request failed: {e}")
+        
+        return None # Should not reach here if exceptions are raised
+    return wrapper
+
+@handle_api_errors
+def _make_request(method: str, endpoint: str, params: dict = None, json: dict = None) -> requests.Response:
+    """Centralized request helper."""
+    url = f"{baseurl}{endpoint}"
+    return requests.request(method, url, headers=headers, params=params, json=json)
 
 # Custom Field Configuration (IDs specific to your Syncro instance)
 UNIFIED_CUSTOM_FIELD_TYPE_ID = int(os.getenv("SYNCRO_UNIFIED_CUSTOM_FIELD_TYPE_ID", "0"))
@@ -95,8 +164,7 @@ def getAppointment(id):
     Returns:
         dict: The appointment data.
     """
-    url = f"{baseurl}appointments/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"appointments/{id}")
     return resp.json().get('appointment')
 
 def getAppointments():
@@ -106,8 +174,7 @@ def getAppointments():
     Returns:
         list: A list of all appointment dictionaries.
     """
-    url = f"{baseurl}appointments"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "appointments")
     return resp.json().get('appointments')
 
 def getAsset(id):
@@ -120,8 +187,7 @@ def getAsset(id):
     Returns:
         Union[dict, Asset]: The asset data (as a dict or Pydantic model).
     """
-    url = f"{baseurl}customer_assets/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"customer_assets/{id}")
     data = resp.json().get('asset')
     return to_model(data, Asset)
 
@@ -132,8 +198,7 @@ def getAssets():
     Returns:
         Union[list, List[Asset]]: A list of assets (as dicts or Pydantic models).
     """
-    url = f"{baseurl}customer_assets"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "customer_assets")
     data = resp.json().get('assets')
     return to_model(data, Asset)
 
@@ -147,8 +212,7 @@ def getContact(id):
     Returns:
         dict: The contact data.
     """
-    url = f"{baseurl}contacts/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"contacts/{id}")
     return resp.json().get('contact')
 
 def getContacts():
@@ -158,8 +222,7 @@ def getContacts():
     Returns:
         list: A list of all contact dictionaries.
     """
-    url = f"{baseurl}contacts"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "contacts")
     return resp.json().get('contacts')
 
 def getContract(id):
@@ -172,8 +235,7 @@ def getContract(id):
     Returns:
         dict: The contract data.
     """
-    url = f"{baseurl}contracts/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"contracts/{id}")
     return resp.json().get('contract')
 
 def getContracts():
@@ -183,8 +245,7 @@ def getContracts():
     Returns:
         list: A list of all contract dictionaries.
     """
-    url = f"{baseurl}contracts"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "contracts")
     return resp.json().get('contracts')
 
 def getCustomer(id):
@@ -197,8 +258,7 @@ def getCustomer(id):
     Returns:
         Union[dict, Customer]: The customer data (as a dict or Pydantic model).
     """
-    url = f"{baseurl}customers/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"customers/{id}")
     data = resp.json().get('customer')
     return to_model(data, Customer)
 
@@ -209,17 +269,11 @@ def getCustomers():
     Returns:
         Union[list, List[Customer]]: A list of all customers (as dicts or models).
     """
-    url = f"{baseurl}customers"
     all_customers = []
     page = 1
 
     while True:
-        response = requests.get(f"{url}?page={page}", headers=headers)
-        
-        if response.status_code != 200:
-            print(f"⚠️ Failed to retrieve customers. Status Code: {response.status_code}")
-            return to_model(all_customers, Customer)
-        
+        response = _make_request("GET", "customers", params={"page": page})
         customers = response.json().get("customers", [])
         if not customers:
             break
@@ -239,8 +293,7 @@ def getEstimate(id):
     Returns:
         dict: The estimate data.
     """
-    url = f"{baseurl}estimates/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"estimates/{id}")
     return resp.json().get('estimate')
 
 def getEstimates():
@@ -250,8 +303,7 @@ def getEstimates():
     Returns:
         list: A list of all estimate dictionaries.
     """
-    url = f"{baseurl}estimates"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "estimates")
     return resp.json().get('estimates')
 
 def getInvoice(id):
@@ -264,8 +316,7 @@ def getInvoice(id):
     Returns:
         dict: The invoice data.
     """
-    url = f"{baseurl}invoices/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"invoices/{id}")
     return resp.json().get('invoice')
 
 def getInvoices():
@@ -275,8 +326,7 @@ def getInvoices():
     Returns:
         list: A list of all invoice dictionaries.
     """
-    url = f"{baseurl}invoices"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "invoices")
     return resp.json().get('invoices')
 
 def getItems():
@@ -286,8 +336,7 @@ def getItems():
     Returns:
         list: A list of all item dictionaries.
     """
-    url = f"{baseurl}items"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "items")
     return resp.json().get('items')
 
 def getLead(id):
@@ -300,8 +349,7 @@ def getLead(id):
     Returns:
         dict: The lead data.
     """
-    url = f"{baseurl}leads/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"leads/{id}")
     return resp.json().get('lead')
 
 def getLeads():
@@ -311,8 +359,7 @@ def getLeads():
     Returns:
         list: A list of all lead dictionaries.
     """
-    url = f"{baseurl}leads"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "leads")
     return resp.json().get('leads')
 
 def getLineitems():
@@ -322,8 +369,7 @@ def getLineitems():
     Returns:
         list: A list of all line item dictionaries.
     """
-    url = f"{baseurl}line_items"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "line_items")
     return resp.json().get('line_items')
 
 def getPaymentmethods():
@@ -333,8 +379,7 @@ def getPaymentmethods():
     Returns:
         list: A list of all payment method dictionaries.
     """
-    url = f"{baseurl}payment_methods"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "payment_methods")
     return resp.json().get('payment_methods')
 
 def getPayment(id):
@@ -347,8 +392,7 @@ def getPayment(id):
     Returns:
         dict: The payment data.
     """
-    url = f"{baseurl}payments/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"payments/{id}")
     return resp.json().get('payment')
 
 def getPayments():
@@ -358,8 +402,7 @@ def getPayments():
     Returns:
         list: A list of all payment dictionaries.
     """
-    url = f"{baseurl}payments"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "payments")
     return resp.json().get('payments')
 
 def getPortalusers():
@@ -369,8 +412,7 @@ def getPortalusers():
     Returns:
         list: A list of all portal user dictionaries.
     """
-    url = f"{baseurl}portal_users"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "portal_users")
     return resp.json().get('portal_users')
 
 def getProduct(id):
@@ -383,8 +425,7 @@ def getProduct(id):
     Returns:
         dict: The product data.
     """
-    url = f"{baseurl}products/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"products/{id}")
     return resp.json().get('product')
 
 def getProducts():
@@ -394,8 +435,7 @@ def getProducts():
     Returns:
         list: A list of all product dictionaries.
     """
-    url = f"{baseurl}products"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "products")
     return resp.json().get('products')
 
 def getProductcategories():
@@ -405,8 +445,7 @@ def getProductcategories():
     Returns:
         list: A list of all product category dictionaries.
     """
-    url = f"{baseurl}products/categories"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "products/categories")
     return resp.json().get('categories')
 
 def getPurchaseorder(id):
@@ -419,8 +458,7 @@ def getPurchaseorder(id):
     Returns:
         dict: The purchase order data.
     """
-    url = f"{baseurl}purchase_orders/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"purchase_orders/{id}")
     return resp.json().get('purchase_order')
 
 def getPurchaseorders():
@@ -430,8 +468,7 @@ def getPurchaseorders():
     Returns:
         list: A list of all purchase order dictionaries.
     """
-    url = f"{baseurl}purchase_orders"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "purchase_orders")
     return resp.json().get('purchase_orders')
 
 def getRMMalert(id):
@@ -444,8 +481,7 @@ def getRMMalert(id):
     Returns:
         dict: The RMM alert data.
     """
-    url = f"{baseurl}rmm_alerts/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"rmm_alerts/{id}")
     return resp.json().get('rmm_alert')
 
 def getRMMalerts():
@@ -455,8 +491,7 @@ def getRMMalerts():
     Returns:
         list: A list of active RMM alert dictionaries.
     """
-    url = f"{baseurl}rmm_alerts?status=active"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "rmm_alerts", params={"status": "active"})
     return resp.json().get('rmm_alerts')
 
 def getSchedule(id):
@@ -469,8 +504,7 @@ def getSchedule(id):
     Returns:
         dict: The schedule data.
     """
-    url = f"{baseurl}schedules/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"schedules/{id}")
     return resp.json().get('schedule')
 
 def getSchedules():
@@ -480,8 +514,7 @@ def getSchedules():
     Returns:
         list: A list of all schedule dictionaries.
     """
-    url = f"{baseurl}schedules"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "schedules")
     return resp.json().get('schedules')
 
 def getTicket(id):
@@ -494,8 +527,7 @@ def getTicket(id):
     Returns:
         Union[dict, Ticket]: The ticket data (as a dict or Pydantic model).
     """
-    url = f"{baseurl}tickets/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"tickets/{id}")
     data = resp.json().get('ticket')
     return to_model(data, Ticket)
 
@@ -506,8 +538,7 @@ def getSettings():
     Returns:
         dict: The system settings data.
     """
-    url = f"{baseurl}settings"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "settings")
     return resp.json().get('settings')
 
 def getSettingstabs():
@@ -517,8 +548,7 @@ def getSettingstabs():
     Returns:
         list: A list of system settings tabs.
     """
-    url = f"{baseurl}settings/tabs"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "settings/tabs")
     return resp.json().get('tabs')
 
 def getTickets():
@@ -528,8 +558,7 @@ def getTickets():
     Returns:
         Union[list, List[Ticket]]: A list of all tickets (as dicts or models).
     """
-    url = f"{baseurl}tickets"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "tickets")
     data = resp.json().get('tickets')
     return to_model(data, Ticket)
 
@@ -544,8 +573,7 @@ def getTickets_bycustomer_afterdate(customerid, createdafterdate):
     Returns:
         Union[list, List[Ticket]]: A list of matching tickets.
     """
-    url = f"{baseurl}tickets?customer_id={customerid}&created_after={createdafterdate}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "tickets", params={"customer_id": customerid, "created_after": createdafterdate})
     data = resp.json().get('tickets')
     return to_model(data, Ticket)
 
@@ -559,8 +587,7 @@ def getTickets_byuser(user_id):
     Returns:
         Union[list, List[Ticket]]: A list of tickets assigned to the user.
     """
-    url = f"{baseurl}tickets?user_id={user_id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "tickets", params={"user_id": user_id})
     data = resp.json().get('tickets')
     return to_model(data, Ticket)
 
@@ -575,8 +602,7 @@ def getTickets_byuser_status(user_id, status):
     Returns:
         Union[list, List[Ticket]]: A list of matching tickets.
     """
-    url = f"{baseurl}tickets?user_id={user_id}&status={status}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "tickets", params={"user_id": user_id, "status": status})
     data = resp.json().get('tickets')
     return to_model(data, Ticket)
 
@@ -587,8 +613,7 @@ def getTicketssettings():
     Returns:
         dict: Ticket settings data.
     """
-    url = f"{baseurl}tickets/settings"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "tickets/settings")
     return resp.json()
 
 def getTickettimers():
@@ -598,8 +623,7 @@ def getTickettimers():
     Returns:
         list: A list of all ticket timer dictionaries.
     """
-    url = f"{baseurl}tickets_timers"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "tickets_timers")
     return resp.json().get('tickets_timers')
 
 def getTimelogs():
@@ -609,8 +633,7 @@ def getTimelogs():
     Returns:
         list: A list of all time log dictionaries.
     """
-    url = f"{baseurl}timelogs"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "timelogs")
     return resp.json().get('timelogs')
 
 def getTimelogs_user(id):
@@ -623,8 +646,7 @@ def getTimelogs_user(id):
     Returns:
         list: A list of time logs for the user.
     """
-    url = f"{baseurl}timelogs?user_id={id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "timelogs", params={"user_id": id})
     return resp.json().get('timelogs')
 
 def getVendor(id):
@@ -637,8 +659,7 @@ def getVendor(id):
     Returns:
         dict: The vendor data.
     """
-    url = f"{baseurl}vendors/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"vendors/{id}")
     return resp.json().get('vendor')
 
 def getVendors():
@@ -648,8 +669,7 @@ def getVendors():
     Returns:
         list: A list of all vendor dictionaries.
     """
-    url = f"{baseurl}vendors"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "vendors")
     return resp.json().get('vendors')
 
 def getUser(id):
@@ -662,8 +682,7 @@ def getUser(id):
     Returns:
         dict: The user data.
     """
-    url = f"{baseurl}users/{id}"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", f"users/{id}")
     return resp.json().get('user')
 
 def getUsers():
@@ -673,8 +692,7 @@ def getUsers():
     Returns:
         list: A list of all user dictionaries.
     """
-    url = f"{baseurl}users"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "users")
     return resp.json().get('users')
 
 def getUseremail(id):
@@ -710,8 +728,7 @@ def getWikipages():
     Returns:
         list: A list of all wiki page dictionaries.
     """
-    url = f"{baseurl}wiki_pages"
-    resp = requests.get(url, headers=headers)
+    resp = _make_request("GET", "wiki_pages")
     return resp.json().get('wiki_pages')
 
 ###
@@ -729,13 +746,8 @@ def getFullTicket(ticket_id):
     Returns:
         dict: The complete ticket data.
     """
-    url = f"{baseurl}tickets/{ticket_id}"
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code == 200:
-        return response.json().get('ticket', {})
-    else:
-        return {"error": f"Failed to retrieve ticket. Status code: {response.status_code}"}
+    resp = _make_request("GET", f"tickets/{ticket_id}")
+    return resp.json().get('ticket', {})
 
 def setTicketCustomFields(ticket_id, custom_fields):
     """
@@ -748,14 +760,8 @@ def setTicketCustomFields(ticket_id, custom_fields):
     Returns:
         str: A status message indicating success or failure.
     """
-    url = f"{baseurl}tickets/{ticket_id}"
-    payload = {"properties": custom_fields}
-    response = requests.put(url, headers=headers, json=payload)
-    
-    if response.status_code == 200:
-        return f"Successfully updated ticket {ticket_id} custom fields."
-    else:
-        return f"Failed to update ticket {ticket_id}. Status: {response.status_code}"
+    _make_request("PUT", f"tickets/{ticket_id}", json={"properties": custom_fields})
+    return f"Successfully updated ticket {ticket_id} custom fields."
 
 def assignUnifiedCustomFields(ticket_id):
     """
@@ -770,14 +776,8 @@ def assignUnifiedCustomFields(ticket_id):
     if not UNIFIED_CUSTOM_FIELD_TYPE_ID:
         return False, "Unified custom field type ID not configured."
 
-    url = f"{baseurl}tickets/{ticket_id}"
-    payload = {"ticket_type_id": UNIFIED_CUSTOM_FIELD_TYPE_ID}
-    response = requests.put(url, headers=headers, json=payload)
-
-    if response.status_code == 200:
-        return True, f"Successfully assigned unified custom fields to ticket {ticket_id}"
-    else:
-        return False, f"Failed to assign custom fields. Status: {response.status_code}"
+    _make_request("PUT", f"tickets/{ticket_id}", json={"ticket_type_id": UNIFIED_CUSTOM_FIELD_TYPE_ID})
+    return True, f"Successfully assigned unified custom fields to ticket {ticket_id}"
 
 def addTicketComment(ticket_id, body, hidden=True, tech="Automation"):
     """
@@ -792,7 +792,6 @@ def addTicketComment(ticket_id, body, hidden=True, tech="Automation"):
     Returns:
         bool: True if successful, False otherwise.
     """
-    url = f"{baseurl}tickets/{ticket_id}/comment"
     payload = {
         "subject": "Ticket Update",
         "tech": tech, 
@@ -800,8 +799,8 @@ def addTicketComment(ticket_id, body, hidden=True, tech="Automation"):
         "hidden": hidden,
         "do_not_email": True
     }
-    response = requests.post(url, headers=headers, json=payload)
-    return response.status_code == 200
+    resp = _make_request("POST", f"tickets/{ticket_id}/comment", json=payload)
+    return resp.status_code == 201 or resp.status_code == 200
 
 def getTicketByNumber(ticket_number):
     """
@@ -813,12 +812,9 @@ def getTicketByNumber(ticket_number):
     Returns:
         dict: The ticket data.
     """
-    url = f"{baseurl}tickets?number={ticket_number}"
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        tickets = response.json().get('tickets', [])
-        return tickets[0] if tickets else None
-    return None
+    resp = _make_request("GET", "tickets", params={"number": ticket_number})
+    tickets = resp.json().get('tickets', [])
+    return tickets[0] if tickets else None
 
 def getCustomerDetails(customer_id):
     """
@@ -830,9 +826,8 @@ def getCustomerDetails(customer_id):
     Returns:
         dict: The customer details data.
     """
-    url = f"{baseurl}customers/{customer_id}"
-    response = requests.get(url, headers=headers)
-    return response.json().get("customer", {}) if response.status_code == 200 else {}
+    resp = _make_request("GET", f"customers/{customer_id}")
+    return resp.json().get("customer", {})
 
 def updateCustomerCustomField(customer_id, field_name, field_value):
     """
@@ -846,10 +841,8 @@ def updateCustomerCustomField(customer_id, field_name, field_value):
     Returns:
         bool: True if successful, False otherwise.
     """
-    url = f"{baseurl}customers/{customer_id}"
-    payload = {"properties": {field_name: field_value}}
-    response = requests.put(url, headers=headers, json=payload)
-    return response.status_code == 200
+    resp = _make_request("PUT", f"customers/{customer_id}", json={"properties": {field_name: field_value}})
+    return resp.status_code == 200
 
 def getLaborProducts():
     """
@@ -861,9 +854,8 @@ def getLaborProducts():
     if not LABOR_CATEGORY_ID:
         print("Labor category ID not configured.")
         return []
-    url = f"{baseurl}products?category_id={LABOR_CATEGORY_ID}"
-    response = requests.get(url, headers=headers)
-    return response.json().get("products", []) if response.status_code == 200 else []
+    resp = _make_request("GET", "products", params={"category_id": LABOR_CATEGORY_ID})
+    return resp.json().get("products", [])
 
 def getLaborEntries(ticket_id, full_ticket=None):
     """
@@ -876,13 +868,13 @@ def getLaborEntries(ticket_id, full_ticket=None):
     Returns:
         list: A list of labor entry dictionaries.
     """
-    url = f"{baseurl}tickets/{ticket_id}/time_entries"
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get("time_entries", [])
-    if full_ticket:
-        return full_ticket.get("ticket_timers", []) + full_ticket.get("line_items", [])
-    return []
+    try:
+        resp = _make_request("GET", f"tickets/{ticket_id}/time_entries")
+        return resp.json().get("time_entries", [])
+    except SyncroNotFoundError:
+        if full_ticket:
+            return full_ticket.get("ticket_timers", []) + full_ticket.get("line_items", [])
+        return []
 
 def _safe_print(text):
     """Helper to print text safely, handling Unicode encoding issues on Windows."""
@@ -906,14 +898,13 @@ def lookupCallerByPhone(phone_number: str) -> dict:
         return {"found": False}
 
     # Search customers
-    resp = requests.get(f"{baseurl}customers", headers=headers, params={"q": normalized})
-    if resp.status_code == 200:
-        for customer in resp.json().get("customers", []):
-            if re.sub(r'\D', '', customer.get("phone", ""))[-10:] == normalized:
-                return {
-                    "found": True,
-                    "company_name": customer.get("business_name") or customer.get("name"),
-                    "customer_id": customer["id"],
-                    "match_type": "customer",
-                }
+    resp = _make_request("GET", "customers", params={"q": normalized})
+    for customer in resp.json().get("customers", []):
+        if re.sub(r'\D', '', customer.get("phone", ""))[-10:] == normalized:
+            return {
+                "found": True,
+                "company_name": customer.get("business_name") or customer.get("name"),
+                "customer_id": customer["id"],
+                "match_type": "customer",
+            }
     return {"found": False}

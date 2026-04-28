@@ -7,10 +7,10 @@ This list tracks the planned improvements to transform this wrapper into a profe
 - [x] Refactor wrapper functions to return model instances instead of raw dictionaries.
 - [x] Add field validation to ensure data integrity.
 
-## 🟡 Step 2: Error Handling & Rate Limiting
-- [ ] Create custom exception hierarchy (`SyncroAPIError`, `SyncroAuthError`, etc.).
-- [ ] Implement automatic retries with exponential backoff.
-- [ ] Add rate limit detection and handling.
+## 🟢 Step 2: Error Handling & Rate Limiting (Completed)
+- [x] Create custom exception hierarchy (`SyncroAPIError`, `SyncroAuthError`, etc.).
+- [x] Implement automatic retries with exponential backoff.
+- [x] Add rate limit detection and handling.
 
 ## 🟡 Step 3: Asynchronous Support
 - [ ] Migrate core requests logic to `httpx`.
