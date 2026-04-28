@@ -21,11 +21,11 @@ A robust, community-driven Python wrapper for the **SyncroMSP API**. Designed fo
 
 ## ✨ Features
 
-- **Full API Coverage:** Seamlessly interact with Tickets, Assets, Customers, Invoices, and more.
+- **Asynchronous First:** Built on `httpx` and `asyncio` for high-performance, non-blocking API calls.
+- **Robust Type Safety:** Created with Pydantic models for core Syncro objects (Ticket, Customer, Asset).
+- **Self-Healing:** Automatic retries with exponential backoff for rate limits and server errors.
 - **Smart Pagination:** Built-in handling for large datasets (e.g., fetching 1000+ customers).
-- **Developer Friendly:** Clean, readable functions that return typed dictionary responses.
-- **Environment Variable Support:** Easy configuration via `.env` files.
-- **Robustness:** Built-in error handling and Unicode-safe printing for Windows environments.
+- **Developer Friendly:** Modern class-based SDK or simple functional wrappers.
 
 ---
 
@@ -55,41 +55,53 @@ Edit your `.env` file with the following:
 | `SYNCRO_API_BASE_URL` | Your Syncro instance URL (e.g., `https://yourdomain.syncromsp.com/api/v1/`) |
 | `SYNCRO_API_TOKEN` | Your API token from Syncro Admin |
 | `COMPANY_NAME` | Your MSP Company name |
+| `SYNCRO_RETURN_MODELS` | Set to `True` to receive Pydantic objects instead of dicts |
 
 ---
 
 ## 💡 Usage Examples
 
-### Tickets
-Retrieve and search for tickets with ease:
+### Modern Class-based (Recommended)
+The `SyncroClient` manages your connection pool efficiently:
+
 ```python
-from syncro_python_wrapper import getTicket, getTickets_byuser
+import asyncio
+from syncro_python_wrapper import SyncroClient
 
-# Get a specific ticket
-ticket = getTicket(12345)
-print(f"[{ticket['number']}] {ticket['subject']}")
+async def main():
+    async with SyncroClient() as syncro:
+        # Fetch data concurrently
+        ticket_task = syncro.get_ticket(12345)
+        customer_task = syncro.get_customer(6789)
+        
+        ticket, customer = await asyncio.gather(ticket_task, customer_task)
+        
+        print(f"Ticket: {ticket.subject}")
+        print(f"Customer: {customer.business_name}")
 
-# Get all open tickets for a technician
-tech_tickets = getTickets_byuser(789)
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-### Customers
-Handle large customer lists using automatic pagination:
-```python
-from syncro_python_wrapper import getCustomers
+### Simple Functional Wrapper
+If you just need a quick lookup:
 
-all_customers = getCustomers()
-print(f"Total Customers: {len(all_customers)}")
+```python
+from syncro_python_wrapper import getTicket
+import asyncio
+
+ticket = asyncio.run(getTicket(12345))
+print(ticket['subject'])
 ```
 
 ---
 
 ## 🛠 MCP Integration (Model Context Protocol)
 
-This wrapper is designed to be **MCP-Ready**. Because the functions are structured cleanly and return standard Python dictionaries, any modern AI coding agent (like Claude, ChatGPT, or Gemini) can wrap this library into a fully functional **MCP Server** at the drop of a hat.
+This wrapper is designed to be **MCP-Ready**. Because the functions are structured cleanly and are asynchronous, any modern AI coding agent can wrap this library into a high-performance **MCP Server** instantly.
 
 Simply provide this codebase to your agent and ask:
-> "Use the functions in `syncro_python_wrapper.py` to create a Model Context Protocol (MCP) server so I can interact with my SyncroMSP data directly from my AI assistant."
+> "Use the SyncroClient in `syncro_python_wrapper.py` to create a Model Context Protocol (MCP) server so I can interact with my SyncroMSP data directly from my AI assistant."
 
 ---
 

@@ -12,10 +12,10 @@ This list tracks the planned improvements to transform this wrapper into a profe
 - [x] Implement automatic retries with exponential backoff.
 - [x] Add rate limit detection and handling.
 
-## 🟡 Step 3: Asynchronous Support
-- [ ] Migrate core requests logic to `httpx`.
-- [ ] Provide `async` versions of all API wrapper functions.
-- [ ] Optimize for high-concurrency MCP server environments.
+## 🟢 Step 3: Asynchronous Support (Completed)
+- [x] Migrate core requests logic to `httpx`.
+- [x] Provide `async` versions of all API wrapper functions.
+- [x] Optimize for high-concurrency MCP server environments.
 
 ## 🟡 Step 4: Search Primitives
 - [ ] Create "Smart Search" functions that query multiple endpoints (e.g., searching customers by phone/email/name in one call).
