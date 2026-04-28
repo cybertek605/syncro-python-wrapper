@@ -1,7 +1,7 @@
 ## SyncroMSP Python Wrapper ##
 ## A COMMUNITY-DRIVEN API WRAPPER FOR SYNCROMSP ##
 ##
-## github.com/your-repo/syncro-python-wrapper ##
+## github.com/cybertek605/syncro-python-wrapper ##
 
 import sys
 import os
@@ -22,8 +22,7 @@ bearertoken = os.getenv("SYNCRO_API_TOKEN")
 UNIFIED_CUSTOM_FIELD_TYPE_ID = int(os.getenv("SYNCRO_UNIFIED_CUSTOM_FIELD_TYPE_ID", "0"))
 LABOR_CATEGORY_ID = int(os.getenv("SYNCRO_LABOR_CATEGORY_ID", "0"))
 
-# AI Agent Configuration
-AGENT_NAME = os.getenv("AI_AGENT_NAME", "SyncroAssist")
+# Company Configuration
 COMPANY_NAME = os.getenv("COMPANY_NAME", "Your Company")
 
 # Setup Requests Headers
@@ -318,21 +317,14 @@ def getFullTicket(ticket_id):
     else:
         return {"error": f"Failed to retrieve ticket. Status code: {response.status_code}"}
 
-def updateTicketCustomFields(ticket_id, summary, action_items):
-    """Updates AI-related custom fields for a ticket."""
+def setTicketCustomFields(ticket_id, custom_fields):
+    """Sets multiple custom field values for a ticket in a single API call."""
     url = f"{baseurl}tickets/{ticket_id}"
-    
-    # These field names should match your Syncro custom field names
-    properties = {
-        "AI Summary": summary,
-        "AI Action Items": action_items
-    }
-    
-    payload = {"properties": properties}
+    payload = {"properties": custom_fields}
     response = requests.put(url, headers=headers, json=payload)
     
     if response.status_code == 200:
-        return f"Successfully updated ticket {ticket_id} with AI Summary and Action Items."
+        return f"Successfully updated ticket {ticket_id} custom fields."
     else:
         return f"Failed to update ticket {ticket_id}. Status: {response.status_code}"
 
@@ -350,18 +342,16 @@ def assignUnifiedCustomFields(ticket_id):
     else:
         return False, f"Failed to assign custom fields. Status: {response.status_code}"
 
-def addTechnicianCoachingNote(ticket_id, coaching_message):
-    """Adds a private coaching note to a ticket."""
+def addTicketComment(ticket_id, body, hidden=True, tech="Automation"):
+    """Adds a comment to a ticket."""
     url = f"{baseurl}tickets/{ticket_id}/comment"
-    
     payload = {
-        "subject": "Ticket Automation",
-        "tech": "Automation", 
-        "body": coaching_message,
-        "hidden": True,
+        "subject": "Ticket Update",
+        "tech": tech, 
+        "body": body,
+        "hidden": hidden,
         "do_not_email": True
     }
-    
     response = requests.post(url, headers=headers, json=payload)
     return response.status_code == 200
 
@@ -372,29 +362,6 @@ def getTicketByNumber(ticket_number):
         tickets = response.json().get('tickets', [])
         return tickets[0] if tickets else None
     return None
-
-def generateTechnicianCoaching(ticket_id):
-    """Generates AI-powered coaching note for the assigned technician."""
-    ticket = getTicket(ticket_id)
-    if not ticket:
-        return "Could not retrieve ticket"
-
-    user_id = ticket.get('user_id')
-    technician_name = "Technician"
-    if user_id:
-        user = getUser(user_id)
-        if user:
-            technician_name = user.get('full_name', '').split()[0] or "Technician"
-
-    # This assumes an LLM integration exists (e.g., Ollama, OpenAI)
-    # Placeholder for LLM logic
-    prompt = f"Write a coaching note for {technician_name} regarding ticket {ticket.get('number')}..."
-    
-    # Example integration (needs to be implemented based on your choice)
-    # coaching_message = llm.query(prompt) 
-    coaching_message = f"Hello {technician_name}, [AI Coaching Message Placeholder] - {AGENT_NAME}"
-    
-    return addTechnicianCoachingNote(ticket_id, coaching_message)
 
 def getCustomerDetails(customer_id):
     url = f"{baseurl}customers/{customer_id}"
@@ -423,8 +390,6 @@ def getLaborEntries(ticket_id, full_ticket=None):
     if full_ticket:
         return full_ticket.get("ticket_timers", []) + full_ticket.get("line_items", [])
     return []
-
-# ... [Rest of the helper functions from original file, sanitized similarly] ...
 
 def _safe_print(text):
     try:

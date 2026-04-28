@@ -4,7 +4,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://makeapullrequest.com)
 
-A robust, community-driven Python wrapper for the **SyncroMSP API**. Designed for MSPs and DevOps engineers who want to automate their workflows, integrate with AI agents, or build custom reporting tools.
+A robust, community-driven Python wrapper for the **SyncroMSP API**. Designed for MSPs and DevOps engineers who want to automate their workflows, build custom reporting tools, or create powerful AI-driven integrations.
 
 ---
 
@@ -13,9 +13,7 @@ A robust, community-driven Python wrapper for the **SyncroMSP API**. Designed fo
 - [Quick Start](#-quick-start)
 - [Configuration](#-configuration)
 - [Usage Examples](#-usage-examples)
-  - [Tickets](#tickets)
-  - [Customers](#customers)
-  - [AI Integration](#ai-integration)
+- [MCP Integration (Model Context Protocol)](#-mcp-integration-model-context-protocol)
 - [Contributing](#-contributing)
 - [License](#-license)
 
@@ -25,8 +23,8 @@ A robust, community-driven Python wrapper for the **SyncroMSP API**. Designed fo
 
 - **Full API Coverage:** Seamlessly interact with Tickets, Assets, Customers, Invoices, and more.
 - **Smart Pagination:** Built-in handling for large datasets (e.g., fetching 1000+ customers).
-- **AI-Ready:** Specialized hooks for integrating with LLMs (Ollama, OpenAI) to automate summaries and technician coaching.
-- **Developer Friendly:** Typed responses (via dictionaries) and clean, readable code.
+- **Developer Friendly:** Clean, readable functions that return typed dictionary responses.
+- **Environment Variable Support:** Easy configuration via `.env` files.
 - **Robustness:** Built-in error handling and Unicode-safe printing for Windows environments.
 
 ---
@@ -56,7 +54,6 @@ Edit your `.env` file with the following:
 |----------|-------------|
 | `SYNCRO_API_BASE_URL` | Your Syncro instance URL (e.g., `https://yourdomain.syncromsp.com/api/v1/`) |
 | `SYNCRO_API_TOKEN` | Your API token from Syncro Admin |
-| `AI_AGENT_NAME` | The name your AI butler uses (e.g., "Alfred") |
 | `COMPANY_NAME` | Your MSP Company name |
 
 ---
@@ -85,17 +82,14 @@ all_customers = getCustomers()
 print(f"Total Customers: {len(all_customers)}")
 ```
 
-### AI Integration
-The wrapper includes specialized functions to power AI agents:
-```python
-from syncro_python_wrapper import updateTicketCustomFields, addTechnicianCoachingNote
+---
 
-# Update AI-generated summaries
-updateTicketCustomFields(12345, "Client is having email issues...", "1. Check DNS\n2. Verify SMTP")
+## 🛠 MCP Integration (Model Context Protocol)
 
-# Add a private coaching note for the tech
-addTechnicianCoachingNote(12345, "Great job resolving this, consider checking the firewall next time.")
-```
+This wrapper is designed to be **MCP-Ready**. Because the functions are structured cleanly and return standard Python dictionaries, any modern AI coding agent (like Claude, ChatGPT, or Gemini) can wrap this library into a fully functional **MCP Server** at the drop of a hat.
+
+Simply provide this codebase to your agent and ask:
+> "Use the functions in `syncro_python_wrapper.py` to create a Model Context Protocol (MCP) server so I can interact with my SyncroMSP data directly from my AI assistant."
 
 ---
 
