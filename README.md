@@ -94,6 +94,20 @@ ticket = asyncio.run(getTicket(12345))
 print(ticket['subject'])
 ```
 
+### Smart Search & Filtering
+Powerful primitives for finding data quickly:
+
+```python
+# Multi-field customer search (searches name, email, phone, etc.)
+results = await syncro.search_customers_smart("Cybertek")
+
+# Find 'In Progress' tickets that haven't been updated in 3 days
+stale_tickets = await syncro.search_tickets_advanced(status="In Progress", stale_days=3)
+
+# Search for all 'Server' assets for a specific customer
+servers = await syncro.search_assets_smart(customer_id=123, query="Server")
+```
+
 ---
 
 ## 🛠 MCP Integration (Model Context Protocol)

@@ -17,6 +17,6 @@ This list tracks the planned improvements to transform this wrapper into a profe
 - [x] Provide `async` versions of all API wrapper functions.
 - [x] Optimize for high-concurrency MCP server environments.
 
-## 🟡 Step 4: Search Primitives
-- [ ] Create "Smart Search" functions that query multiple endpoints (e.g., searching customers by phone/email/name in one call).
-- [ ] Add advanced filtering capabilities for ticket and asset searches.
+## 🟢 Step 4: Search Primitives (Completed)
+- [x] Create "Smart Search" functions that query multiple endpoints (e.g., searching customers by phone/email/name in one call).
+- [x] Add advanced filtering capabilities for ticket and asset searches.

@@ -183,6 +183,66 @@ class SyncroClient:
         await self._request("PUT", f"tickets/{ticket_id}", json={"properties": custom_fields})
         return True
 
+    # --- Smart Search Primitives ---
+
+    async def search_customers_smart(self, query: str) -> Union[list, List[Customer]]:
+        """
+        A multi-field search for customers. 
+        Searches across names, business names, emails, and phone numbers.
+        """
+        # Syncro's 'q' parameter searches most fields automatically
+        resp = await self._request("GET", "customers", params={"q": query})
+        data = resp.json().get("customers", [])
+        return self._to_model(data, Customer)
+
+    async def search_tickets_advanced(self, 
+                                     customer_id: Optional[int] = None, 
+                                     status: Optional[str] = None, 
+                                     user_id: Optional[int] = None,
+                                     stale_days: Optional[int] = None) -> Union[list, List[Ticket]]:
+        """
+        Advanced ticket filtering.
+        
+        Args:
+            customer_id: Filter by customer.
+            status: Filter by status (e.g., 'New', 'In Progress').
+            user_id: Filter by assigned technician.
+            stale_days: If provided, only returns tickets not updated in X days.
+        """
+        params = {}
+        if customer_id: params["customer_id"] = customer_id
+        if status: params["status"] = status
+        if user_id: params["user_id"] = user_id
+
+        resp = await self._request("GET", "tickets", params=params)
+        data = resp.json().get("tickets", [])
+
+        if stale_days:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            filtered = []
+            for t in data:
+                updated_at_str = t.get("updated_at")
+                if updated_at_str:
+                    # Syncro returns ISO format
+                    updated_at = datetime.datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+                    if (now - updated_at).days >= stale_days:
+                        filtered.append(t)
+            data = filtered
+
+        return self._to_model(data, Ticket)
+
+    async def search_assets_smart(self, customer_id: Optional[int] = None, query: str = None) -> Union[list, List[Asset]]:
+        """
+        Search for assets by name or type, optionally filtered by customer.
+        """
+        params = {}
+        if customer_id: params["customer_id"] = customer_id
+        if query: params["q"] = query
+
+        resp = await self._request("GET", "customer_assets", params=params)
+        data = resp.json().get("assets", [])
+        return self._to_model(data, Asset)
+
     # Helper for legacy lookups
     async def lookup_caller_by_phone(self, phone_number: str) -> dict:
         """Search for a customer by phone number."""
