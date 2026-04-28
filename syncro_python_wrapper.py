@@ -10,6 +10,14 @@ import requests
 import datetime
 from requests.structures import CaseInsensitiveDict
 from dotenv import load_dotenv
+from typing import Union, List, Optional
+
+# Import Pydantic models
+try:
+    from .models import Ticket, Customer, Asset
+except ImportError:
+    # Handle cases where the package is not installed as a module
+    from models import Ticket, Customer, Asset
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,6 +25,9 @@ load_dotenv()
 # API Configuration
 baseurl = os.getenv("SYNCRO_API_BASE_URL")
 bearertoken = os.getenv("SYNCRO_API_TOKEN")
+
+# Global setting for model usage
+RETURN_MODELS = os.getenv("SYNCRO_RETURN_MODELS", "False").lower() == "true"
 
 # Custom Field Configuration (IDs specific to your Syncro instance)
 UNIFIED_CUSTOM_FIELD_TYPE_ID = int(os.getenv("SYNCRO_UNIFIED_CUSTOM_FIELD_TYPE_ID", "0"))
@@ -39,6 +50,19 @@ def configure_syncro_api(new_base_url, new_api_token):
     headers["Authorization"] = "Bearer " + new_api_token
     print(f"[CONFIG] Syncro API Wrapper reconfigured for: {baseurl}")
 
+def to_model(data: Union[dict, list], model_class: Any) -> Any:
+    """Helper to convert dictionary or list of dictionaries to Pydantic models."""
+    if not RETURN_MODELS or data is None:
+        return data
+    
+    try:
+        if isinstance(data, list):
+            return [model_class(**item) for item in data]
+        return model_class(**data)
+    except Exception as e:
+        print(f"⚠️ Model conversion error: {e}")
+        return data
+
 ####
 #### BASIC API REQUESTS
 ####
@@ -56,12 +80,14 @@ def getAppointments():
 def getAsset(id):
     url = f"{baseurl}customer_assets/{id}"
     resp = requests.get(url, headers=headers)
-    return resp.json().get('asset')
+    data = resp.json().get('asset')
+    return to_model(data, Asset)
 
 def getAssets():
     url = f"{baseurl}customer_assets"
     resp = requests.get(url, headers=headers)
-    return resp.json().get('assets')
+    data = resp.json().get('assets')
+    return to_model(data, Asset)
 
 def getContact(id):
     url = f"{baseurl}contacts/{id}"
@@ -86,7 +112,8 @@ def getContracts():
 def getCustomer(id):
     url = f"{baseurl}customers/{id}"
     resp = requests.get(url, headers=headers)
-    return resp.json().get('customer')
+    data = resp.json().get('customer')
+    return to_model(data, Customer)
 
 def getCustomers():
     """Fetch all customers from Syncro, handling paginated responses."""
@@ -99,7 +126,7 @@ def getCustomers():
         
         if response.status_code != 200:
             print(f"⚠️ Failed to retrieve customers. Status Code: {response.status_code}")
-            return all_customers
+            return to_model(all_customers, Customer)
         
         customers = response.json().get("customers", [])
         if not customers:
@@ -108,7 +135,7 @@ def getCustomers():
         all_customers.extend(customers)
         page += 1
 
-    return all_customers
+    return to_model(all_customers, Customer)
 
 def getEstimate(id):
     url = f"{baseurl}estimates/{id}"
@@ -218,7 +245,8 @@ def getSchedules():
 def getTicket(id):
     url = f"{baseurl}tickets/{id}"
     resp = requests.get(url, headers=headers)
-    return resp.json().get('ticket')
+    data = resp.json().get('ticket')
+    return to_model(data, Ticket)
 
 def getSettings():
     url = f"{baseurl}settings"
@@ -233,22 +261,26 @@ def getSettingstabs():
 def getTickets():
     url = f"{baseurl}tickets"
     resp = requests.get(url, headers=headers)
-    return resp.json().get('tickets')
+    data = resp.json().get('tickets')
+    return to_model(data, Ticket)
 
 def getTickets_bycustomer_afterdate(customerid, createdafterdate):
     url = f"{baseurl}tickets?customer_id={customerid}&created_after={createdafterdate}"
     resp = requests.get(url, headers=headers)
-    return resp.json().get('tickets')
+    data = resp.json().get('tickets')
+    return to_model(data, Ticket)
 
 def getTickets_byuser(user_id):
     url = f"{baseurl}tickets?user_id={user_id}"
     resp = requests.get(url, headers=headers)
-    return resp.json().get('tickets')
+    data = resp.json().get('tickets')
+    return to_model(data, Ticket)
 
 def getTickets_byuser_status(user_id, status):
     url = f"{baseurl}tickets?user_id={user_id}&status={status}"
     resp = requests.get(url, headers=headers)
-    return resp.json().get('tickets')
+    data = resp.json().get('tickets')
+    return to_model(data, Ticket)
 
 def getTicketssettings():
     url = f"{baseurl}tickets/settings"
